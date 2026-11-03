@@ -20,6 +20,7 @@ data/synthetic/*.csv
 !data/processed/.gitkeep
 
 # Generated artefacts
+output/dashboard.html
 output/plots/*
 output/reports/*
 output/csv/*

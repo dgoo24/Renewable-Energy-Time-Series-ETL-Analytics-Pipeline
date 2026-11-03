@@ -7,6 +7,7 @@ process          ingest, validate, clean, persist, analyse and report
 process --skip-db  same pipeline without a database
 history          show stored installations, ingestion runs and quality reports
 report           regenerate analytics and reports from stored processed data
+dashboard        rebuild output/dashboard.html from the existing outputs
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from src.config import (
     load_installation_metadata,
     load_settings,
 )
+from src.dashboard import generate_dashboard
 from src.database import (
     DatabaseError,
     create_engine_for_url,
@@ -139,6 +141,8 @@ def _print_report_outputs(outputs: ReportOutputs, settings: Settings) -> None:
     print(f"Report: {outputs.report_path}")
     print(f"CSV files: {len(outputs.csv_paths)} in {settings.csv_dir}")
     print(f"Plots: {len(outputs.plot_paths)} in {settings.plots_dir}")
+    if outputs.dashboard_path is not None:
+        print(f"Dashboard: {outputs.dashboard_path}")
 
 
 def cmd_init_db(args: argparse.Namespace) -> int:
@@ -545,6 +549,18 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    settings = _settings_from_args(args)
+    path = generate_dashboard(settings)
+    print(f"Dashboard: {path}")
+    if not (settings.csv_dir / "statistics.csv").exists():
+        LOGGER.warning(
+            "No generated CSV tables were found. Run `process` or `report` first "
+            "so that the dashboard contains data."
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m src.main",
@@ -586,6 +602,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="only report this installation code (repeatable)",
     )
     report_parser.set_defaults(func=cmd_report)
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard", help="rebuild output/dashboard.html from existing outputs"
+    )
+    dashboard_parser.add_argument("--output-dir", help="output directory")
+    dashboard_parser.set_defaults(func=cmd_dashboard)
     return parser
 
 

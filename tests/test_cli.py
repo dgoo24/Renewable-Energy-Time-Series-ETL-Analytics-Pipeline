@@ -38,6 +38,18 @@ def test_process_skip_db_writes_reports(monkeypatch, tmp_path: Path) -> None:
     assert (output_dir / "csv" / "pr_daily.csv").exists()
     assert list((output_dir / "plots").glob("*.png"))
 
+    dashboard = output_dir / "dashboard.html"
+    assert dashboard.exists()
+    dashboard_text = dashboard.read_text(encoding="utf-8")
+    assert "Renewable Energy Dashboard" in dashboard_text
+    assert "Synthetische Beispieldaten" in dashboard_text
+    assert "plots/" in dashboard_text
+
+    # The dashboard can be rebuilt from the existing outputs without a database.
+    dashboard.unlink()
+    assert main(["dashboard", "--output-dir", str(output_dir)]) == 0
+    assert dashboard.exists()
+
     # skip-db mode is explicitly non-idempotent: a second run re-ingests.
     assert main(["process", "--skip-db"]) == 0
 

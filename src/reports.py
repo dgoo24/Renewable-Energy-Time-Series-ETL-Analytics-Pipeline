@@ -27,6 +27,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from src.analytics import AnalyticsResult  # noqa: E402
 from src.config import METRIC_COLUMNS, METRIC_LABELS, METRIC_UNITS, Settings  # noqa: E402
+from src.dashboard import generate_dashboard  # noqa: E402
 
 
 @dataclass
@@ -34,6 +35,7 @@ class ReportOutputs:
     report_path: Path
     csv_paths: list[Path] = field(default_factory=list)
     plot_paths: list[Path] = field(default_factory=list)
+    dashboard_path: Path | None = None
 
 
 def _safe_name(value: str) -> str:
@@ -676,7 +678,13 @@ def generate_reports(
         file_summary=file_summary,
         processing_warnings=list(processing_warnings or []),
     )
-    return ReportOutputs(report_path=report_path, csv_paths=csv_paths, plot_paths=plot_paths)
+    dashboard_path = generate_dashboard(settings)
+    return ReportOutputs(
+        report_path=report_path,
+        csv_paths=csv_paths,
+        plot_paths=plot_paths,
+        dashboard_path=dashboard_path,
+    )
 
 
 def _write_markdown_report(

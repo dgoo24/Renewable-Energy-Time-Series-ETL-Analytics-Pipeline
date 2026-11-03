@@ -5,13 +5,14 @@
 **ETL- und Analyse-Pipeline für photovoltaische Zeitreihen**
 
 Von rohen CSV-Messdateien über validierte und bereinigte Daten in PostgreSQL
-bis hin zu Kennzahlen, Performance Ratio und reproduzierbaren Berichten.
+bis hin zu Kennzahlen, Performance Ratio, reproduzierbaren Berichten und einem
+statischen Dashboard.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![pandas](https://img.shields.io/badge/pandas-2.x-150458?logo=pandas&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-1.26-013243?logo=numpy&logoColor=white)
-![pytest](https://img.shields.io/badge/Tests-67%20bestanden-brightgreen)
+![pytest](https://img.shields.io/badge/Tests-70%20bestanden-brightgreen)
 ![Status](https://img.shields.io/badge/Status-abgeschlossen-success)
 
 </div>
@@ -37,6 +38,7 @@ bis hin zu Kennzahlen, Performance Ratio und reproduzierbaren Berichten.
 - [Performance Ratio](#-performance-ratio)
 - [Schnellstart](#-schnellstart)
 - [CLI-Referenz](#-cli-referenz)
+- [Dashboard und Windows-Launcher](#-dashboard-und-windows-launcher)
 - [Ausgaben](#-ausgaben)
 - [Konfiguration](#-konfiguration)
 - [Datenbankschema](#-datenbankschema)
@@ -60,6 +62,7 @@ dateibasierten ETL-Prozess:
 | **4. Persistenz** | Rohdaten unveränderlich speichern, verarbeitete Daten atomar neu aufbauen |
 | **5. Analytik** | Statistik, Tages-/Monatsenergie, Performance Ratio, Trends, Saisonalität |
 | **6. Reporting** | CSV-Tabellen, PNG-Diagramme und einen Markdown-Bericht erzeugen |
+| **7. Dashboard** | Alles als statische HTML-Seite bündeln – ohne Server und ohne Zusatzabhängigkeit |
 
 **Bewusste Designentscheidungen**
 
@@ -93,12 +96,13 @@ flowchart LR
     subgraph Analyse
         ANA["Analytik<br/><small>Energie · PR · Trends</small>"]
         REP["Reporting<br/><small>CSV · PNG · Markdown</small>"]
+        DASH["Dashboard<br/><small>statisches HTML</small>"]
     end
 
     CSV --> ING --> VAL --> CLN
     CLN --> RAW
     RAW --> PROC
-    PROC --> ANA --> REP
+    PROC --> ANA --> REP --> DASH
 ```
 
 **Datenfluss in Worten:** Jede Datei wird zunächst vollständig geparst und validiert.
@@ -227,7 +231,17 @@ python -m src.main history
 python -m src.main report
 ```
 
-### 5. Synthetische Beispieldaten erzeugen
+### 5. Dashboard öffnen
+
+```powershell
+start output\dashboard.html
+```
+
+Das Dashboard wird bei jedem `process`- und `report`-Lauf automatisch neu erzeugt.
+Unter Windows geht es auch ohne Terminal: `start.bat` doppelklicken und im Menü
+**Dashboard im Browser öffnen** wählen.
+
+### 6. Synthetische Beispieldaten erzeugen
 
 ```bash
 python scripts/generate_synthetic_data.py
@@ -272,6 +286,8 @@ python -m src.main history  [--limit N] [--database-url URL]
 python -m src.main report   [--output-dir DIR] \
                             [--installation CODE ...] \
                             [--database-url URL]
+
+python -m src.main dashboard [--output-dir DIR]
 ```
 
 | Befehl | Wirkung |
@@ -281,6 +297,7 @@ python -m src.main report   [--output-dir DIR] \
 | `process --skip-db` | Gleicher Ablauf ohne PostgreSQL |
 | `history` | Zeigt Anlagen, Ingestion-Läufe und Qualitätsberichte |
 | `report` | Erzeugt Analyse und Berichte aus gespeicherten verarbeiteten Daten neu |
+| `dashboard` | Erzeugt `output/dashboard.html` aus den vorhandenen CSV- und PNG-Ausgaben neu |
 
 ---
 
@@ -319,12 +336,82 @@ output/
 │   ├── pr_comparison.png
 │   ├── pr_trend.png
 │   └── seasonal_pr.png
-└── reports/
-    └── summary_report.md
+├── reports/
+│   └── summary_report.md
+└── dashboard.html
 ```
 
 Generierte Ausgaben sowie Roh- und Synthesedaten sind per `.gitignore`
 ausgeschlossen. Es werden nur Dokumentation und `.gitkeep`-Dateien versioniert.
+
+---
+
+## 🖥 Dashboard und Windows-Launcher
+
+Für alle, die nicht mit der Kommandozeile arbeiten möchten, gibt es zwei
+zusätzliche Einstiegspunkte. Beide nutzen dieselbe Pipeline – es kommt keine
+weitere Abhängigkeit hinzu.
+
+### Statisches HTML-Dashboard
+
+Nach jedem `process`- oder `report`-Lauf liegt `output/dashboard.html` bereit.
+Die Datei wird direkt im Browser geöffnet; es läuft kein Webserver.
+
+| Bereich | Inhalt |
+|---|---|
+| **Kennzahlen** | Anlagen, verarbeitete Messwerte, durchschnittliche Performance Ratio, imputierte Werte, Qualitätsprobleme |
+| **Anlagen** | Nennleistung, Ø Tages-PR, Gesamt-PR, Abdeckung und Status |
+| **Datenqualität** | Kennzahlen pro Quelldatei und aggregierte Qualitätsprobleme |
+| **Performance Ratio** | Gesamtwerte inklusive Energie, Einstrahlung und Abdeckung |
+| **Monatliche Werte** | Energie, Einstrahlung, PR und Qualitätsflag pro Monat |
+| **Trends** | Statistische Steigung, R², p-Wert und Monate unterhalb der Schwelle |
+| **Diagramme** | Alle PNG-Diagramme als Galerie, mit Suchfeld filterbar |
+| **CSV-Exporte** | Direkte Links zu allen Tabellen für Excel, LibreOffice oder pandas |
+
+Eigenschaften:
+
+- **Kein Server, kein Build-Schritt, keine neuen Pakete.** Eine einzelne
+  HTML-Datei mit eingebettetem CSS und minimalem JavaScript.
+- **Relativ verlinkt.** Diagramme und CSV-Dateien werden aus `output/plots/`
+  und `output/csv/` geladen. Die Ordnerstruktur muss daher erhalten bleiben.
+- **Deutsche Oberfläche** passend zur Dokumentation.
+- **Synthetik-Hinweis** prominent im Kopfbereich.
+- **Druck- und Mobilansicht** über Media Queries.
+- **Schreibgeschützt:** Das Dashboard visualisiert nur. Verarbeitung startet
+  weiterhin über die CLI oder den Launcher.
+
+```powershell
+# Dashboard aus vorhandenen Ausgaben neu erzeugen
+python -m src.main dashboard
+
+# Im Standardbrowser öffnen
+start output\dashboard.html
+```
+
+### Windows-Launcher `start.bat`
+
+`start.bat` im Projektordner doppelklicken. Es öffnet ein Menü und führt die
+Befehle im richtigen Verzeichnis aus; das Fenster bleibt nach jedem Lauf offen.
+
+| Menüpunkt | Aktion |
+|---|---|
+| **1** | Historie anzeigen (`history`) |
+| **2** | Daten verarbeiten (`process`, mit PostgreSQL) |
+| **3** | Daten verarbeiten ohne Datenbank (`process --skip-db`) |
+| **4** | Berichte neu erzeugen (`report`) |
+| **5** | Dashboard im Browser öffnen (erzeugt es bei Bedarf) |
+| **6** | Tests ausführen (`pytest`) |
+| **7** | `output/`-Ordner im Explorer öffnen |
+| **0** | Beenden |
+
+Der Launcher prüft, ob `python` im `PATH` verfügbar ist, und zeigt bei Fehlern
+eine verständliche Meldung statt eines sofort schließenden Fensters.
+
+> [!NOTE]
+> `start.bat` ist für Windows gedacht. Unter Linux und macOS genügen die
+> CLI-Befehle; das Dashboard lässt sich anschließend mit
+> `xdg-open output/dashboard.html` beziehungsweise
+> `open output/dashboard.html` öffnen.
 
 ---
 
@@ -413,6 +500,7 @@ Die Suite deckt ab:
 - Deduplizierung, Rasterung und begrenzte Imputation
 - Analytik und Performance Ratio
 - CSV-, PNG- und Markdown-Reporting
+- Statisches HTML-Dashboard inklusive Escaping, Zahlenformatierung und Linkprüfung
 - Datenbankoperationen, Duplikatschutz und Rebuilds
 - CLI-Verhalten
 
@@ -463,9 +551,11 @@ TEST_DATABASE_URL="postgresql+psycopg2://renewable:renewable@localhost:5432/rene
 │   ├── database.py                # Transaktionen und Persistenz
 │   ├── analytics.py               # Statistik, Energie, PR, Trends
 │   ├── reports.py                 # CSV/PNG/Markdown-Ausgaben
+│   ├── dashboard.py               # Statisches HTML-Dashboard
 │   └── main.py                    # CLI
 ├── tests/                         # Pytest-Suite
 ├── docker-compose.yml             # PostgreSQL 16
+├── start.bat                      # Windows-Launcher mit Menü
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -489,6 +579,9 @@ TEST_DATABASE_URL="postgresql+psycopg2://renewable:renewable@localhost:5432/rene
   vorn verschoben.
 - **Trends:** Statistische Trends sind deskriptiv und belegen keine
   Moduldegradation.
+- **Dashboard:** Die HTML-Seite ist eine reine Visualisierung der zuletzt
+  erzeugten CSV- und PNG-Dateien. Sie ersetzt weder die Pipeline noch die
+  Datenbank und muss nach neuen Läufen neu erzeugt werden.
 - **Betriebsmodell:** Die Pipeline ist bewusst single-process und dateiorientiert.
   Sie eignet sich für periodische CSV-Importe einer Forschungsgruppe, nicht für
   hochfrequentes Streaming.
