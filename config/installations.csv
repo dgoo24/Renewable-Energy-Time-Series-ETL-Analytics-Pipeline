@@ -1,0 +1,4 @@
+installation_id,name,location,capacity_kw
+INST_A,North Roof Array,Research Campus North,10.0
+INST_B,South Carport Array,Research Campus South,5.5
+INST_C,West Facade Array,Research Campus West,3.2

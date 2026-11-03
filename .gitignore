@@ -1,0 +1,34 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment / credentials
+.env
+
+# Raw and generated research data (never commit real measurements)
+data/raw/*.csv
+data/processed/*
+data/synthetic/*.csv
+!data/processed/.gitkeep
+
+# Generated artefacts
+output/plots/*
+output/reports/*
+output/csv/*
+!output/plots/.gitkeep
+!output/reports/.gitkeep
+!output/csv/.gitkeep
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
