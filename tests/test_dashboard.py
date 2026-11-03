@@ -113,6 +113,26 @@ def test_dashboard_handles_missing_outputs(settings: Settings) -> None:
     assert "Noch keine CSV-Dateien vorhanden." in text
 
 
+def test_standalone_dashboard_embeds_plots(settings: Settings) -> None:
+    _write_dashboard_inputs(settings)
+    target = settings.output_dir / "site" / "index.html"
+
+    path = generate_dashboard(
+        settings,
+        embed_images=True,
+        include_csv_links=False,
+        path=target,
+    )
+
+    assert path == target
+    text = path.read_text(encoding="utf-8")
+    assert "data:image/png;base64," in text
+    assert 'href="plots/' not in text
+    assert 'href="csv/' not in text
+    assert "Online-Demo" in text
+    assert "Die CSV-Exporte sind in der Online-Demo nicht enthalten." in text
+
+
 def test_dashboard_respects_non_synthetic_provenance(settings: Settings) -> None:
     real = replace(settings, data_provenance="MEASURED DATA - internal research")
 

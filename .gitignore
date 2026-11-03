@@ -24,6 +24,7 @@ output/dashboard.html
 output/plots/*
 output/reports/*
 output/csv/*
+site/
 !output/plots/.gitkeep
 !output/reports/.gitkeep
 !output/csv/.gitkeep

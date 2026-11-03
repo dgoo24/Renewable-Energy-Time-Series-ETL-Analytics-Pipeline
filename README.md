@@ -12,8 +12,9 @@ statischen Dashboard.
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![pandas](https://img.shields.io/badge/pandas-2.x-150458?logo=pandas&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-1.26-013243?logo=numpy&logoColor=white)
-![pytest](https://img.shields.io/badge/Tests-70%20bestanden-brightgreen)
+![pytest](https://img.shields.io/badge/Tests-71%20bestanden-brightgreen)
 ![Status](https://img.shields.io/badge/Status-abgeschlossen-success)
+[![Live-Demo](https://img.shields.io/badge/Live--Demo-Dashboard-2563eb?logo=github&logoColor=white)](https://dgoo24.github.io/Renewable-Energy-Time-Series-ETL-Analytics-Pipeline/)
 
 </div>
 
@@ -25,6 +26,12 @@ statischen Dashboard.
 > **keine Messungen einer realen Photovoltaikanlage**. Jeder Bericht und jedes
 > Diagramm enthält diesen Hinweis. Die Daten dürfen nicht als reale
 > Forschungsmessungen präsentiert werden.
+
+> [!TIP]
+> **Online-Demo:** Das Dashboard ist als statische GitHub-Pages-Seite verfügbar:
+> **https://dgoo24.github.io/Renewable-Energy-Time-Series-ETL-Analytics-Pipeline/**
+> Sie wird bei jedem Push aus synthetischen Daten neu gebaut und ist kein
+> Echtzeit-Stream.
 
 ---
 
@@ -39,6 +46,7 @@ statischen Dashboard.
 - [Schnellstart](#-schnellstart)
 - [CLI-Referenz](#-cli-referenz)
 - [Dashboard und Windows-Launcher](#-dashboard-und-windows-launcher)
+- [Online-Demo](#-online-demo)
 - [Ausgaben](#-ausgaben)
 - [Konfiguration](#-konfiguration)
 - [Datenbankschema](#-datenbankschema)
@@ -415,6 +423,49 @@ eine verständliche Meldung statt eines sofort schließenden Fensters.
 
 ---
 
+## 🌐 Online-Demo
+
+Das Dashboard ist öffentlich auf GitHub Pages verfügbar:
+
+**https://dgoo24.github.io/Renewable-Energy-Time-Series-ETL-Analytics-Pipeline/**
+
+Der Ablauf ist vollständig automatisiert (`.github/workflows/pages.yml`):
+
+```text
+Push auf main
+   ↓
+GitHub Actions
+   ├── synthetische Beispieldaten erzeugen
+   ├── python -m src.main process --skip-db
+   ├── Dashboard mit eingebetteten PNGs bauen
+   └── site/ auf GitHub Pages veröffentlichen
+```
+
+| Eigenschaft | Verhalten |
+|---|---|
+| **Aktualisierung** | Bei jedem Push auf `main` und manuell über *Actions → Deploy dashboard demo → Run workflow* |
+| **Daten** | Deterministisch erzeugte synthetische Beispieldaten |
+| **Diagramme** | Als Base64 direkt in die HTML eingebettet |
+| **CSV-Exporte** | In der Online-Demo nicht enthalten; sie entstehen lokal |
+| **Datenbank** | Wird für die Demo nicht benötigt (`--skip-db`) |
+| **Echtzeit** | Nein – die Seite ist ein statischer Schnappschuss des letzten Builds |
+
+> [!IMPORTANT]
+> „Echtzeit“ bedeutet hier **nicht** Streaming oder laufende Aktualisierung im
+> Browser. Die Seite wird nach jedem Build neu ausgeliefert. Für kontinuierlich
+> aktualisierte Daten wäre ein laufender Dienst nötig – bewusst nicht Teil
+> dieses Projekts.
+
+Das eigenständige Demo-Dashboard lässt sich auch lokal bauen:
+
+```bash
+python scripts/build_dashboard_site.py
+```
+
+Es entsteht `site/index.html` mit allen Diagrammen als eingebettete Data-URIs.
+
+---
+
 ## ⚙️ Konfiguration
 
 Alle Einstellungen werden aus Umgebungsvariablen und einer optionalen `.env`
@@ -533,12 +584,16 @@ TEST_DATABASE_URL="postgresql+psycopg2://renewable:renewable@localhost:5432/rene
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── pages.yml              # GitHub-Pages-Build und -Deployment
 ├── config/
 │   └── installations.csv          # Synthetische Anlagenmetadaten
 ├── data/
 │   └── raw/                       # Eingabe-CSVs (git-ignoriert)
 ├── output/                        # Generierte CSV/PNG/Markdown (git-ignoriert)
 ├── scripts/
+│   ├── build_dashboard_site.py    # Eigenständiges Demo-Dashboard für Pages
 │   └── generate_synthetic_data.py # Deterministischer Synthesedaten-Generator
 ├── sql/
 │   └── queries/                   # Dokumentierte Analyseabfragen

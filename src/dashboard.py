@@ -10,6 +10,7 @@ always matches the last successful ``process`` or ``report`` run.
 
 from __future__ import annotations
 
+import base64
 import html
 from datetime import datetime, timezone
 from pathlib import Path
@@ -200,7 +201,7 @@ def _plot_title(path: Path) -> str:
     return stem.replace("_", " ").capitalize()
 
 
-def _plot_cards(settings: Settings) -> str:
+def _plot_cards(settings: Settings, *, embed_images: bool = False) -> str:
     plots = sorted(settings.plots_dir.glob("*.png"))
     if not plots:
         return '<p class="empty">Noch keine Diagramme vorhanden.</p>'
@@ -208,15 +209,27 @@ def _plot_cards(settings: Settings) -> str:
     for path in plots:
         relative = _relative(path, settings.output_dir)
         title = _plot_title(path)
+        if embed_images:
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            source = f"data:image/png;base64,{encoded}"
+            image = (
+                f'<img src="{source}" alt="{html.escape(title, quote=True)}" '
+                'loading="lazy">'
+            )
+        else:
+            source = quote(relative)
+            image = (
+                f'<a href="{source}" target="_blank" rel="noopener">'
+                f'<img src="{source}" alt="{html.escape(title, quote=True)}" '
+                'loading="lazy">'
+                "</a>"
+            )
         cards.append(
             '<figure class="plot-card" data-title="'
             + html.escape(title.lower(), quote=True)
             + '">'
-            f'<a href="{quote(relative)}" target="_blank" rel="noopener">'
-            f'<img src="{quote(relative)}" alt="{html.escape(title, quote=True)}" '
-            'loading="lazy">'
-            "</a>"
-            f"<figcaption>{html.escape(title)}</figcaption>"
+            + image
+            + f"<figcaption>{html.escape(title)}</figcaption>"
             "</figure>"
         )
     return (
@@ -228,7 +241,12 @@ def _plot_cards(settings: Settings) -> str:
     )
 
 
-def _file_cards(settings: Settings) -> str:
+def _file_cards(settings: Settings, *, include_links: bool = True) -> str:
+    if not include_links:
+        return (
+            '<p class="empty">Die CSV-Exporte sind in der Online-Demo nicht '
+            "enthalten. Sie entstehen lokal im Ordner <code>output/csv/</code>.</p>"
+        )
     files = sorted(settings.csv_dir.glob("*.csv"))
     if not files:
         return '<p class="empty">Noch keine CSV-Dateien vorhanden.</p>'
@@ -287,8 +305,19 @@ def _format_periods(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame
     return result
 
 
-def generate_dashboard(settings: Settings) -> Path:
-    """Build ``output/dashboard.html`` from the generated CSV and PNG files."""
+def generate_dashboard(
+    settings: Settings,
+    *,
+    embed_images: bool = False,
+    include_csv_links: bool = True,
+    path: Path | None = None,
+) -> Path:
+    """Build a static dashboard from the generated CSV and PNG files.
+
+    With ``embed_images`` the plots are inlined as base64 data URIs and with
+    ``include_csv_links=False`` the CSV export list is replaced by a note.  This
+    produces a portable, single-file dashboard suitable for GitHub Pages.
+    """
 
     settings.ensure_directories()
     installations = _read_csv(settings.csv_dir / "installations.csv")
@@ -608,14 +637,19 @@ def generate_dashboard(settings: Settings) -> Path:
                 "🖼",
                 "Diagramme",
                 "Alle erzeugten PNG-Diagramme; mit dem Suchfeld filterbar.",
-                _plot_cards(settings),
+                _plot_cards(settings, embed_images=embed_images),
             ),
             _section(
                 "dateien",
                 "📦",
                 "CSV-Exporte",
-                "Alle Tabellen zum Öffnen in Excel, LibreOffice oder pandas.",
-                _file_cards(settings),
+                (
+                    "Alle Tabellen zum Öffnen in Excel, LibreOffice oder pandas."
+                    if include_csv_links
+                    else "Die Online-Demo enthält nur die Diagramme und Tabellen "
+                    "dieser Seite; die CSV-Exporte entstehen lokal."
+                ),
+                _file_cards(settings, include_links=include_csv_links),
             ),
             _section(
                 "annahmen",
@@ -919,6 +953,7 @@ footer {{
 </html>
 """
 
-    path = settings.output_dir / "dashboard.html"
+    path = path or settings.output_dir / "dashboard.html"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(document, encoding="utf-8")
     return path
