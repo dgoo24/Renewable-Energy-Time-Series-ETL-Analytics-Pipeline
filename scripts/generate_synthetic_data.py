@@ -77,8 +77,12 @@ def _solar_geometry(index: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
     cos_azimuth = (
         np.sin(declination) - np.sin(elevation) * np.sin(latitude)
     ) / (cos_elevation * np.cos(latitude))
-    azimuth = np.arccos(np.clip(cos_azimuth, -1.0, 1.0))
-    azimuth = np.where(hour_angle < 0, -azimuth, azimuth)
+    sin_azimuth = (
+        -np.cos(declination) * np.sin(hour_angle) / cos_elevation
+    )
+    # Azimuth is returned relative to south (negative = east, positive = west).
+    azimuth = np.arctan2(sin_azimuth, cos_azimuth) - np.pi
+    azimuth = (azimuth + np.pi) % (2.0 * np.pi) - np.pi
     return elevation, azimuth
 
 
