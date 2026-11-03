@@ -1,218 +1,292 @@
-# Renewable Energy Time-Series ETL & Analytics Pipeline
+<div align="center">
 
-A small, maintainable Python application that ingests photovoltaic (PV) measurement
-CSV files, validates and cleans them, stores raw and processed data in PostgreSQL,
-computes descriptive analytics and a simplified Performance Ratio (PR), and writes
-CSV tables, PNG plots and a Markdown report.
+# ⚡ Renewable Energy Time-Series ETL & Analytics Pipeline
 
-> **The example datasets in this repository are synthetic.** They were generated for
-> demonstration and testing. They are **not** measurements from a real photovoltaic
-> facility and must never be presented as real research data. Every report and plot
-> repeats this warning. See `data/raw/README.md` and
-> `scripts/generate_synthetic_data.py`.
+**ETL- und Analyse-Pipeline für photovoltaische Zeitreihen**
 
----
+Von rohen CSV-Messdateien über validierte und bereinigte Daten in PostgreSQL
+bis hin zu Kennzahlen, Performance Ratio und reproduzierbaren Berichten.
 
-## What the pipeline does
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![pandas](https://img.shields.io/badge/pandas-2.x-150458?logo=pandas&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-1.26-013243?logo=numpy&logoColor=white)
+![pytest](https://img.shields.io/badge/Tests-67%20bestanden-brightgreen)
+![Status](https://img.shields.io/badge/Status-abgeschlossen-success)
 
-1. **Ingest** every `*.csv` file in the input directory.
-   - Normalises headers, accepts mixed timestamp formats, records malformed values.
-   - Converts wide CSV rows into long format: one row per `installation × sensor ×
-     metric × timestamp`.
-   - Rejects only rows without a parseable timestamp or installation/sensor identifier.
-     Rejected rows are preserved in a separate table and CSV export.
-2. **Validate** each measurement against explicit physical and plausibility thresholds.
-   - Statuses: `valid`, `suspicious`, `invalid`, `missing`.
-   - Statistical outliers are **not** invalidated; only configured physical limits are used.
-3. **Clean** the validated data.
-   - Removes duplicate measurements deterministically (configurable `first`/`last`),
-     while raw duplicates stay untouched in the database.
-   - Places measurements on a regular UTC grid (default 15 minutes).
-   - Imputes only short **internal** gaps; never extrapolates.
-4. **Persist** to PostgreSQL.
-   - `measurements_raw` is append-only and keeps invalid and duplicate values.
-   - `measurements_processed` is rebuilt from all stored raw rows for each affected
-     installation, so adding a file never loses or double-counts earlier data.
-   - Identical files are detected by SHA-256 and skipped.
-5. **Analyse**: descriptive statistics, daily/monthly energy and irradiation,
-   Performance Ratio, statistical trends, reduced-performance months and seasonal
-   comparisons.
-6. **Report**: CSV tables, PNG plots and a Markdown report with assumptions and
-   data-quality notes.
-
-The only infrastructure component is PostgreSQL 16 (Docker Compose). There is no
-Kafka, Spark, Airflow, Kubernetes, FastAPI or cloud dependency.
+</div>
 
 ---
 
-## Requirements
-
-- Python **3.11+** (developed with 3.12)
-- PostgreSQL **16** for the documented setup (any recent PostgreSQL works for local
-  development; the integration test suite was executed against PostgreSQL 18)
-- Python packages from `requirements.txt`: pandas, NumPy, SciPy, SQLAlchemy,
-  psycopg2, Matplotlib, python-dotenv, pytest.
+> [!WARNING]
+> **Alle Beispieldaten in diesem Repository sind synthetisch.**
+> Sie wurden ausschließlich zu Demonstrations- und Testzwecken erzeugt und sind
+> **keine Messungen einer realen Photovoltaikanlage**. Jeder Bericht und jedes
+> Diagramm enthält diesen Hinweis. Die Daten dürfen nicht als reale
+> Forschungsmessungen präsentiert werden.
 
 ---
 
-## Quick start
+## 📋 Inhaltsverzeichnis
+
+- [Überblick](#-überblick)
+- [Architektur](#-architektur)
+- [Eingabeformat](#-eingabeformat)
+- [Datenqualität](#-datenqualität)
+- [Bereinigung und Imputation](#-bereinigung-und-imputation)
+- [Performance Ratio](#-performance-ratio)
+- [Schnellstart](#-schnellstart)
+- [CLI-Referenz](#-cli-referenz)
+- [Ausgaben](#-ausgaben)
+- [Konfiguration](#-konfiguration)
+- [Datenbankschema](#-datenbankschema)
+- [SQL-Abfragen](#-sql-abfragen)
+- [Tests](#-tests)
+- [Projektstruktur](#-projektstruktur)
+- [Annahmen und Grenzen](#-annahmen-und-grenzen)
+
+---
+
+## 🎯 Überblick
+
+Diese Anwendung verarbeitet PV-Messreihen in einem nachvollziehbaren,
+dateibasierten ETL-Prozess:
+
+| Schritt | Aufgabe |
+|---|---|
+| **1. Ingestion** | CSV-Dateien einlesen, gemischte Zeitstempel parsen, fehlerhafte Zeilen separieren |
+| **2. Validierung** | Messwerte in `valid`, `suspicious`, `invalid` und `missing` einordnen |
+| **3. Bereinigung** | Duplikate entfernen, auf ein 15-Minuten-UTC-Raster bringen, kurze Lücken füllen |
+| **4. Persistenz** | Rohdaten unveränderlich speichern, verarbeitete Daten atomar neu aufbauen |
+| **5. Analytik** | Statistik, Tages-/Monatsenergie, Performance Ratio, Trends, Saisonalität |
+| **6. Reporting** | CSV-Tabellen, PNG-Diagramme und einen Markdown-Bericht erzeugen |
+
+**Bewusste Designentscheidungen**
+
+- ❌ Keine Kafka, Spark, Airflow, Kubernetes, FastAPI, React oder Cloud-Abhängigkeiten
+- ✅ PostgreSQL 16 als einzige Infrastrukturkomponente
+- ✅ Rohdaten werden **niemals** verändert oder stillschweigend gelöscht
+- ✅ Verarbeitete Daten sind vollständig aus den Rohdaten rekonstruierbar
+- ✅ Identische Dateien werden über ihren SHA-256-Hash erkannt und übersprungen
+
+---
+
+## 🏗 Architektur
+
+```mermaid
+flowchart LR
+    subgraph Eingabe
+        CSV[("CSV-Dateien<br/>data/raw")]
+    end
+
+    subgraph ETL
+        ING["Ingestion<br/><small>Parsing · Long-Format</small>"]
+        VAL["Validierung<br/><small>Qualitätsstatus</small>"]
+        CLN["Bereinigung<br/><small>Duplikate · Raster · Imputation</small>"]
+    end
+
+    subgraph Speicher
+        RAW[("measurements_raw<br/><small>append-only</small>")]
+        PROC[("measurements_processed<br/><small>wiederaufbaubar</small>")]
+    end
+
+    subgraph Analyse
+        ANA["Analytik<br/><small>Energie · PR · Trends</small>"]
+        REP["Reporting<br/><small>CSV · PNG · Markdown</small>"]
+    end
+
+    CSV --> ING --> VAL --> CLN
+    CLN --> RAW
+    RAW --> PROC
+    PROC --> ANA --> REP
+```
+
+**Datenfluss in Worten:** Jede Datei wird zunächst vollständig geparst und validiert.
+Erst danach werden die Messwerte in der Rohdatentabelle gespeichert. Die verarbeitete
+Tabelle wird für jede betroffene Anlage aus **allen** gespeicherten Rohdaten neu
+aufgebaut. Dadurch können neue Dateien weder frühere Daten verlieren noch doppelt
+gezählt werden.
+
+---
+
+## 📥 Eingabeformat
+
+Erwartete Spalten (Groß-/Kleinschreibung und Leerzeichen werden normalisiert):
+
+| Spalte | Bedeutung | Einheit |
+|---|---|---|
+| `timestamp` | Messzeitpunkt | ISO 8601, `DD.MM.YYYY HH:MM[:SS]`, Epoch-Sekunden oder -Millisekunden |
+| `installation_id` | Anlagenkennung | — |
+| `sensor_id` | Sensor-/Logger-Kanal | — |
+| `active_power_kw` | AC-Wirkleistung | kW |
+| `irradiance_w_m2` | Einstrahlung (POA angenommen) | W/m² |
+| `module_temperature_c` | Modultemperatur | °C |
+| `ambient_temperature_c` | Umgebungstemperatur | °C |
+
+- Zeitstempel **mit** Offset werden nach UTC konvertiert.
+- Zeitstempel **ohne** Offset werden in `INPUT_TIMEZONE` interpretiert
+  (Standard: `Europe/Berlin`).
+- Leere Zahlenwerte gelten als `missing`; nicht parsebare Texte als `invalid`.
+- Dezimalkomma und Tausendertrennzeichen werden akzeptiert.
+- Zusätzliche Spalten werden ignoriert, aber als Ingestion-Hinweis gemeldet.
+- **Rohdateien werden ausschließlich gelesen und nie verändert.**
+
+---
+
+## 🧪 Datenqualität
+
+| Status | Bedeutung | Rohdaten | Verarbeiteter Wert |
+|---|---|---|---|
+| `valid` | innerhalb aller Grenzen | gespeichert | übernommen |
+| `suspicious` | physikalisch möglich, aber unplausibel | gespeichert | übernommen, markiert |
+| `invalid` | nicht parsebar oder physikalisch unmöglich | gespeichert | `NULL`, Originalwert bleibt erhalten |
+| `missing` | leerer Quellwert oder fehlender Raster-Slot | ggf. gespeichert | `NULL`, außer imputiert |
+
+> [!IMPORTANT]
+> Ungültige Werte werden **niemals stillschweigend gelöscht**. Sie bleiben in
+> `measurements_raw`, in den Qualitätsberichten und in den Rejected-Exporten
+> nachvollziehbar. Statistische Ausreißer werden nicht automatisch als ungültig
+> eingestuft – es gelten ausschließlich konfigurierte physikalische Grenzen.
+
+---
+
+## 🧹 Bereinigung und Imputation
+
+| Regel | Verhalten |
+|---|---|
+| **Duplikate** | Gleiche Anlage, Sensor, Metrik und Zeitstempel; deterministische Sortierung, standardmäßig bleibt der erste Eintrag |
+| **Raster** | Resampling auf `RESAMPLE_FREQUENCY` (Standard `15min`) |
+| **Mehrere Samples pro Rasterzelle** | Mittelwertbildung mit Warnung |
+| **Imputation** | Nur interne Lücken, deren Abstand zwischen letztem und nächstem Beobachtungswert ≤ `INTERPOLATION_MAX_GAP_MINUTES` (Standard 30 min) ist |
+| **Keine Extrapolation** | Führende und nachlaufende Lücken werden nie gefüllt |
+| **Ungültige Werte** | Werden **nicht** imputiert und bleiben als `invalid` erhalten |
+
+Imputierte Werte sind explizit markiert (`is_imputed`, `quality_status = imputed`);
+der ursprüngliche Quellwert bleibt in `original_value` verfügbar.
+
+---
+
+## 📐 Performance Ratio
+
+```text
+Endertrag        Yf = E_ac [kWh] / P_nom [kWp]          (Stunden)
+Referenzertrag   Yr = H_poa [kWh/m²] / G_stc [kW/m²]    (Stunden)
+Performance Ratio PR = Yf / Yr
+```
+
+mit `G_stc = 1 kW/m²`.
+
+- PR wird nur berechnet, wenn die Nennleistung bekannt ist und die gepaarte
+  Leistungs-/Einstrahlungsabdeckung mindestens `PR_MIN_COVERAGE` (Standard 80 %) beträgt.
+- Die Einstrahlung wird als **Modul-/Plane-of-Array-Einstrahlung angenommen**.
+- Zeiträume ohne Tageslicht, ohne Einstrahlung, mit fehlenden Eingaben oder
+  unzureichender Abdeckung erhalten einen `quality_flag` und keinen PR-Wert.
+- Die Energieintegration erfolgt rechteckig mit dem konfigurierten Messintervall.
+
+> [!NOTE]
+> Trends werden auf Monats-PR-Werten gefittet. **Eine statistische Steigung ist kein
+> Beweis für physikalische Moduldegradation.** Saisonalität, Verschmutzung,
+> Abschaltungen, Abregelung und fehlende Daten können ebenfalls Trends erzeugen.
+> Der Bericht weist ausdrücklich darauf hin.
+
+---
+
+## 🚀 Schnellstart
+
+### 1. Umgebung einrichten
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+# Linux / macOS
+source .venv/bin/activate
+
 pip install -r requirements.txt
+```
 
+### 2. Konfiguration
+
+```bash
 cp .env.example .env          # Windows: copy .env.example .env
-docker compose up -d          # PostgreSQL 16 on localhost:5432
+```
 
+### 3. PostgreSQL starten
+
+```bash
+docker compose up -d
+```
+
+### 4. Pipeline ausführen
+
+```bash
 python -m src.main init-db
 python -m src.main process
 python -m src.main history
 python -m src.main report
 ```
 
-Place input CSVs in `data/raw/`. The repository ships with a generator for synthetic
-example data:
+### 5. Synthetische Beispieldaten erzeugen
 
 ```bash
 python scripts/generate_synthetic_data.py
-# copies nine synthetic files into data/raw/
 ```
 
-To run the complete pipeline without a database (useful for a quick check):
+Das Skript erzeugt neun synthetische CSV-Dateien und kopiert sie nach `data/raw/`.
+
+### Ohne Datenbank testen
 
 ```bash
 python -m src.main process --skip-db
 ```
 
-`--skip-db` has no persistent file-hash ledger. Re-running it re-ingests the same
-files and overwrites the generated outputs.
+> [!TIP]
+> `--skip-db` besitzt kein persistentes Datei-Hash-Register. Ein erneuter Lauf
+> verarbeitet dieselben Dateien erneut und überschreibt die generierten Ausgaben.
 
-### Using an existing PostgreSQL instance
-
-Set `DATABASE_URL` in `.env` (or pass `--database-url`) and run `init-db` once:
-
-```bash
-python -m src.main init-db --database-url "postgresql+psycopg2://user:pass@host:5432/db"
-```
-
-`init-db` is idempotent: it creates missing tables and never drops data.
-
----
-
-## Input CSV format
-
-Required columns (header names are normalised to lower snake case):
-
-| column | meaning | unit |
-|---|---|---|
-| `timestamp` | measurement time | ISO 8601, `DD.MM.YYYY HH:MM[:SS]`, epoch seconds or milliseconds |
-| `installation_id` | installation code | — |
-| `sensor_id` | source sensor / logger channel | — |
-| `active_power_kw` | AC active power | kW |
-| `irradiance_w_m2` | irradiance (assumed plane-of-array) | W/m² |
-| `module_temperature_c` | module temperature | °C |
-| `ambient_temperature_c` | ambient temperature | °C |
-
-Additional columns are ignored but reported as an ingestion issue.
-
-- Timestamps with an offset are converted to UTC.
-- Timestamps without an offset are interpreted in `INPUT_TIMEZONE`
-  (default `Europe/Berlin`).
-- Blank numeric values are `missing`; unparseable numeric text is `invalid`.
-- Decimal commas and thousands separators are accepted.
-- Raw files are never modified.
-
----
-
-## Data-quality model
-
-| status | meaning | stored in raw | processed value |
-|---|---|---|---|
-| `valid` | inside all physical/plausibility limits | yes | value retained |
-| `suspicious` | physically possible but outside a plausibility range | yes | value retained, flagged |
-| `invalid` | unparseable or physically impossible | yes | `NULL`, original value kept |
-| `missing` | blank source value or absent grid slot | yes (if a row exists) | `NULL` unless imputed |
-
-Invalid values are **never silently deleted**. They remain in `measurements_raw` and
-in the rejected/quality exports. Duplicate raw measurements also remain stored; only
-the processed layer is deduplicated.
-
-Quality reports record counts per file, including duplicate measurements, missing
-intervals, irregular sampling and rejected rows. `issues` is stored as JSON so it can
-be aggregated or queried.
-
----
-
-## Cleaning and imputation rules
-
-- **Duplicates**: same installation, sensor, metric and timestamp. Rows are sorted
-  deterministically by timestamp, source file and source row; the first (default) or
-  last occurrence is kept. Removed counts are reported.
-- **Grid**: resampling to `RESAMPLE_FREQUENCY` (default `15min`). If more than one raw
-  sample falls in a bin, values are averaged and a warning is emitted.
-- **Imputation**: only *internal* gaps where the time between the last observed
-  sample and the next observed sample is at most
-  `INTERPOLATION_MAX_GAP_MINUTES` (default 30 minutes). Leading and trailing gaps are
-  never filled. With 15-minute data this fills at most one missing sample.
-  - `interpolate` (default): time-based linear interpolation.
-  - `ffill`: previous observation.
-  - `none`: leave missing values.
-  - `drop`: remove timestamps with any missing channel.
-- Imputed values are flagged (`is_imputed`, `quality_status = imputed`); the original
-  source value remains available (`original_value`).
-- Invalid observations are **not** imputed, even when they sit between valid samples.
-
----
-
-## Performance Ratio
-
-```
-final yield      Yf = E_ac [kWh] / P_nom [kWp]          (hours)
-reference yield  Yr = H_poa [kWh/m²] / G_stc [kW/m²]    (hours)
-PR = Yf / Yr
-```
-
-with `G_stc = 1 kW/m²`.
-
-- PR is calculated only when capacity is known and paired power/irradiance coverage
-  is at least `PR_MIN_COVERAGE` (default 80%).
-- Irradiance is **assumed** to be plane-of-array; this is not verified by the data.
-- Periods with no daylight, no irradiance, missing inputs or insufficient coverage are
-  labelled with a `quality_flag` and do not contribute a PR value.
-- Energy uses rectangular integration with the configured sampling interval. Missing
-  samples contribute no energy and reduce reported coverage.
-- Trends are fitted to monthly PR values. **A statistical slope is not proof of
-  physical module degradation.** Seasonal effects, soiling, outages, curtailment and
-  missing data can all produce trends. The report states this explicitly.
-
----
-
-## CLI reference
+### Bestehende PostgreSQL-Instanz verwenden
 
 ```bash
-python -m src.main init-db [--database-url URL]
-python -m src.main process [--skip-db] [--input-dir DIR] [--output-dir DIR] [--database-url URL]
-python -m src.main history [--limit N] [--database-url URL]
-python -m src.main report [--output-dir DIR] [--installation CODE ...] [--database-url URL]
+python -m src.main init-db \
+  --database-url "postgresql+psycopg2://benutzer:passwort@host:5432/datenbank"
 ```
 
-- `process` uses the database by default. Files whose SHA-256 was already imported are
-  skipped. After a run, processed data is rebuilt for every touched installation from
-  all raw rows stored for it.
-- If every file was already imported, `process` rebuilds all installations so an
-  earlier failed processing step can be recovered.
-- `report` regenerates analytics and outputs from the stored processed measurements
-  without re-reading the source files.
+`init-db` ist idempotent: fehlende Tabellen werden angelegt, vorhandene Daten
+werden **nie** gelöscht.
 
 ---
 
-## Outputs
+## 🖥 CLI-Referenz
 
-By default (`OUTPUT_DIR=output`):
+```bash
+python -m src.main init-db  [--database-url URL]
 
+python -m src.main process  [--skip-db] \
+                            [--input-dir DIR] \
+                            [--output-dir DIR] \
+                            [--database-url URL]
+
+python -m src.main history  [--limit N] [--database-url URL]
+
+python -m src.main report   [--output-dir DIR] \
+                            [--installation CODE ...] \
+                            [--database-url URL]
 ```
+
+| Befehl | Wirkung |
+|---|---|
+| `init-db` | Erstellt das Datenbankschema |
+| `process` | Ingestion → Validierung → Bereinigung → Speicherung → Analyse → Bericht |
+| `process --skip-db` | Gleicher Ablauf ohne PostgreSQL |
+| `history` | Zeigt Anlagen, Ingestion-Läufe und Qualitätsberichte |
+| `report` | Erzeugt Analyse und Berichte aus gespeicherten verarbeiteten Daten neu |
+
+---
+
+## 📊 Ausgaben
+
+```text
 output/
 ├── csv/
 │   ├── statistics.csv
@@ -231,14 +305,14 @@ output/
 │   ├── missing_intervals.csv
 │   ├── file_processing_summary.csv
 │   ├── processed_measurements.csv
-│   ├── quality_<file>.csv
-│   └── rejected_<file>.csv
+│   ├── quality_<datei>.csv
+│   └── rejected_<datei>.csv
 ├── plots/
-│   ├── <installation>_active_power.png
-│   ├── <installation>_irradiance.png
-│   ├── <installation>_temperatures.png
-│   ├── <installation>_daily_energy.png
-│   ├── <installation>_monthly_pr.png
+│   ├── <anlage>_active_power.png
+│   ├── <anlage>_irradiance.png
+│   ├── <anlage>_temperatures.png
+│   ├── <anlage>_daily_energy.png
+│   ├── <anlage>_monthly_pr.png
 │   ├── quality_overview.png
 │   ├── missing_values_heatmap.png
 │   ├── missing_values_by_metric.png
@@ -249,154 +323,182 @@ output/
     └── summary_report.md
 ```
 
-Generated outputs and raw/synthetic CSVs are git-ignored. Only `.gitkeep` files and
-documentation are committed.
+Generierte Ausgaben sowie Roh- und Synthesedaten sind per `.gitignore`
+ausgeschlossen. Es werden nur Dokumentation und `.gitkeep`-Dateien versioniert.
 
 ---
 
-## Configuration
+## ⚙️ Konfiguration
 
-All settings are read from environment variables and an optional `.env` file. See
-`.env.example` for the full list.
+Alle Einstellungen werden aus Umgebungsvariablen und einer optionalen `.env`
+gelesen. Die vollständige Liste steht in `.env.example`.
 
-| variable | default | purpose |
+| Variable | Standard | Zweck |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+psycopg2://renewable:renewable@localhost:5432/renewable_energy` | main database |
-| `TEST_DATABASE_URL` | `…/renewable_energy_test` | integration tests only |
-| `INPUT_DIR` / `OUTPUT_DIR` | `data/raw` / `output` | input and generated files |
-| `INSTALLATIONS_FILE` | `config/installations.csv` | optional capacity/name metadata |
-| `INPUT_TIMEZONE` | `Europe/Berlin` | timezone for naive timestamps |
-| `EXPECTED_INTERVAL_MINUTES` | `15` | expected sampling interval |
-| `RESAMPLE_FREQUENCY` | `15min` | grid frequency; empty disables resampling |
+| `DATABASE_URL` | `postgresql+psycopg2://renewable:renewable@localhost:5432/renewable_energy` | Hauptdatenbank |
+| `TEST_DATABASE_URL` | `…/renewable_energy_test` | Nur für Integrationstests |
+| `INPUT_DIR` / `OUTPUT_DIR` | `data/raw` / `output` | Ein- und Ausgabeverzeichnis |
+| `INSTALLATIONS_FILE` | `config/installations.csv` | Optionale Anlagenmetadaten |
+| `INPUT_TIMEZONE` | `Europe/Berlin` | Zeitzone für naive Zeitstempel |
+| `EXPECTED_INTERVAL_MINUTES` | `15` | Erwartetes Messintervall |
+| `RESAMPLE_FREQUENCY` | `15min` | Rasterfrequenz; leer deaktiviert Resampling |
 | `MISSING_STRATEGY` | `interpolate` | `interpolate`, `ffill`, `none`, `drop` |
-| `INTERPOLATION_MAX_GAP_MINUTES` | `30` | maximum internal gap to fill |
-| `DUPLICATE_KEEP` | `first` | `first` or `last` |
-| `PR_MIN_IRRADIANCE_W_M2` | `20` | daylight threshold for PR diagnostics |
-| `PR_MIN_COVERAGE` | `0.8` | minimum paired coverage for PR |
-| `DATA_PROVENANCE` | synthetic warning | label printed in every report/plot |
+| `INTERPOLATION_MAX_GAP_MINUTES` | `30` | Maximale interne Lücke für Imputation |
+| `DUPLICATE_KEEP` | `first` | `first` oder `last` |
+| `PR_MIN_IRRADIANCE_W_M2` | `20` | Tageslichtschwelle für PR-Diagnostik |
+| `PR_MIN_COVERAGE` | `0.8` | Mindestabdeckung für PR |
+| `DATA_PROVENANCE` | Synthetik-Hinweis | Label in Berichten und Diagrammen |
 
-Validation thresholds (`POWER_*`, `IRRADIANCE_*`, `*_TEMPERATURE_*`) are listed in
-`.env.example`.
-
-Installation capacity is optional metadata. Without it, PR is skipped with an explicit
-warning; ingestion, cleaning and other analytics still run.
+> [!NOTE]
+> Die Anlagenleistung ist optionale Metainformation. Fehlt sie, wird die
+> Performance Ratio mit einer expliziten Warnung übersprungen; Ingestion,
+> Bereinigung und alle übrigen Analysen laufen weiter.
 
 ---
 
-## Database schema
+## 🗄 Datenbankschema
 
-| table | purpose |
+| Tabelle | Zweck |
 |---|---|
-| `installations` | installation codes, names, locations, capacity |
-| `sensors` | sensor channel per installation (metric + unit) |
-| `ingestion_runs` | one row per imported file, unique SHA-256, row counts |
-| `measurements_raw` | append-only raw measurements, including invalid and duplicate rows |
-| `rejected_records` | source rows rejected during ingestion, with raw JSON |
-| `quality_reports` | per-file quality counts and JSON issue list |
-| `measurements_processed` | deduplicated, gridded, possibly imputed values with status flags |
+| `installations` | Anlagenkennung, Name, Standort, Nennleistung |
+| `sensors` | Sensorkanal pro Anlage (Metrik + Einheit) |
+| `ingestion_runs` | Ein Eintrag pro importierter Datei, eindeutiger SHA-256, Zeilenzahlen |
+| `measurements_raw` | Append-only-Rohdaten inklusive ungültiger und doppelter Werte |
+| `rejected_records` | Abgelehnte Quellzeilen mit Rohdaten als JSON |
+| `quality_reports` | Qualitätskennzahlen pro Datei und JSON-Issue-Liste |
+| `measurements_processed` | Dedupliziert, gerastert, ggf. imputiert, mit Statusflags |
 
-`measurements_raw` has a unique key on `(ingestion_run_id, source_row, metric)`.
-`measurements_processed` is unique on `(installation_id, sensor_id, timestamp)` and is
-replaced atomically per installation during a rebuild.
-
-All writes use transactions. `init-db` never drops existing data.
+- `measurements_raw` ist eindeutig über `(ingestion_run_id, source_row, metric)`.
+- `measurements_processed` ist eindeutig über `(installation_id, sensor_id, timestamp)`.
+- Beim Neuaufbau werden die verarbeiteten Zeilen einer Anlage atomar ersetzt.
+- Alle Schreibvorgänge laufen in Transaktionen.
 
 ---
 
-## SQL queries
+## 🧮 SQL-Abfragen
 
-Plain, documented SQL lives in `sql/queries/`:
+Dokumentierte, reine SQL-Abfragen liegen in `sql/queries/`:
 
-- `measurements_by_installation.sql`
-- `measurements_by_time_range.sql`
-- `retrieve_processed_measurements.sql`
-- `daily_averages.sql`
-- `monthly_averages.sql`
-- `compare_installations.sql`
-- `missing_measurement_intervals.sql`
-- `raw_duplicates.sql`
-- `quality_reports.sql`
-
-Example:
+| Datei | Inhalt |
+|---|---|
+| `measurements_by_installation.sql` | Messwerte einer Anlage |
+| `measurements_by_time_range.sql` | Messwerte in einem Zeitfenster |
+| `retrieve_processed_measurements.sql` | Verarbeitete Werte inkl. fehlender Zeilen |
+| `daily_averages.sql` | Tagesmittel und Tagesenergie |
+| `monthly_averages.sql` | Monatsmittel und Monatsenergie |
+| `compare_installations.sql` | Anlagenvergleich und spezifischer Ertrag |
+| `missing_measurement_intervals.sql` | Zusammenhängende Fehlintervalle |
+| `raw_duplicates.sql` | Duplikate in der Rohdatentabelle |
+| `quality_reports.sql` | Qualitätsberichte pro Datei |
 
 ```bash
 psql "$DATABASE_URL" -v installation_code=INST_A \
   -f sql/queries/measurements_by_installation.sql
 ```
 
-See `sql/queries/README.md` for psql variables. Energy calculations in SQL assume the
-same 15-minute interval as the application.
+Die psql-Variablen und weitere Beispiele stehen in `sql/queries/README.md`.
 
 ---
 
-## Tests
+## ✅ Tests
 
 ```bash
 pytest
 ```
 
-The suite covers ingestion, validation, cleaning/imputation, analytics and PR,
-reporting, SQLite-backed database operations, duplicate-file protection and CLI
-behaviour.
+Die Suite deckt ab:
 
-### PostgreSQL integration test
+- Ingestion, Zeitstempel- und Zahlenparsing, Rejected Rows
+- Validierungsstatus und Qualitätsberichte
+- Deduplizierung, Rasterung und begrenzte Imputation
+- Analytik und Performance Ratio
+- CSV-, PNG- und Markdown-Reporting
+- Datenbankoperationen, Duplikatschutz und Rebuilds
+- CLI-Verhalten
 
-The integration test is skipped unless `TEST_DATABASE_URL` is set. It runs the real
-CLI against PostgreSQL, including `init-db`, repeated `process` runs, duplicate-file
-skipping, rebuilds after new data, `history` and `report`. For safety it refuses to run
-against any database whose name does not contain `test`.
+### PostgreSQL-Integrationstest
 
-```bash
+Der Integrationstest wird übersprungen, wenn `TEST_DATABASE_URL` nicht gesetzt ist.
+Er führt die **echte CLI** gegen PostgreSQL aus – inklusive `init-db`, mehrfachen
+`process`-Läufen, Duplikat-Erkennung, Rebuild nach neuen Daten, `history` und
+`report`. Aus Sicherheitsgründen verweigert er die Ausführung, wenn der
+Datenbankname nicht `test` enthält.
+
+```powershell
 # PowerShell
 $env:TEST_DATABASE_URL="postgresql+psycopg2://renewable:renewable@localhost:5432/renewable_energy_test"
 pytest
+```
 
+```bash
 # bash
 TEST_DATABASE_URL="postgresql+psycopg2://renewable:renewable@localhost:5432/renewable_energy_test" pytest
 ```
 
-The test drops and recreates the tables in the test database. Never point it at a
-production database.
+> [!CAUTION]
+> Der Integrationstest löscht und erstellt die Tabellen in der Testdatenbank neu.
+> Niemals auf eine Produktionsdatenbank zeigen lassen.
 
 ---
 
-## Project structure
+## 📁 Projektstruktur
 
-```
-├── config/installations.csv      # synthetic example installation metadata
-├── data/raw/                     # input CSVs (git-ignored)
-├── output/                       # generated CSV/PNG/Markdown (git-ignored)
-├── scripts/generate_synthetic_data.py
-├── sql/queries/                  # documented analytical SQL
+```text
+.
+├── config/
+│   └── installations.csv          # Synthetische Anlagenmetadaten
+├── data/
+│   └── raw/                       # Eingabe-CSVs (git-ignoriert)
+├── output/                        # Generierte CSV/PNG/Markdown (git-ignoriert)
+├── scripts/
+│   └── generate_synthetic_data.py # Deterministischer Synthesedaten-Generator
+├── sql/
+│   └── queries/                   # Dokumentierte Analyseabfragen
 ├── src/
-│   ├── config.py                 # settings and metadata
-│   ├── ingestion.py              # CSV parsing and long format
-│   ├── validation.py             # quality statuses and reports
-│   ├── cleaning.py               # dedupe, gridding, bounded imputation
-│   ├── models.py                 # SQLAlchemy schema
-│   ├── database.py               # transactions and persistence
-│   ├── analytics.py              # statistics, energy, PR, trends
-│   ├── reports.py                # CSV/PNG/Markdown outputs
-│   └── main.py                   # CLI
-├── tests/
-├── docker-compose.yml            # PostgreSQL 16 only
+│   ├── config.py                  # Einstellungen und Metadaten
+│   ├── ingestion.py               # CSV-Parsing und Long-Format
+│   ├── validation.py              # Qualitätsstatus und Berichte
+│   ├── cleaning.py                # Duplikate, Raster, Imputation
+│   ├── models.py                  # SQLAlchemy-Schema
+│   ├── database.py                # Transaktionen und Persistenz
+│   ├── analytics.py               # Statistik, Energie, PR, Trends
+│   ├── reports.py                 # CSV/PNG/Markdown-Ausgaben
+│   └── main.py                    # CLI
+├── tests/                         # Pytest-Suite
+├── docker-compose.yml             # PostgreSQL 16
 ├── requirements.txt
-└── .env.example
+├── .env.example
+└── README.md
 ```
 
 ---
 
-## Assumptions and limitations
+## ⚠️ Annahmen und Grenzen
 
-- Example data is synthetic. No result here describes a real PV system.
-- Irradiance is assumed to be plane-of-array and AC power is assumed at the inverter
-  output; both should be confirmed before using real data.
-- Energy integration is rectangular and conservative for missing samples.
-- PR excludes partial days/months below the coverage threshold.
-- Multiple sensors for the same metric are averaged per timestamp; this is reported as
-  a cleaning warning and is a simplification.
-- Ambiguous local timestamps during the autumn DST change are interpreted as the first
-  occurrence; non-existent spring times are shifted forward.
-- Statistical trends are descriptive only. They do not establish module degradation.
-- The pipeline is intentionally single-process and file-oriented. It is suitable for a
-  research group's periodic CSV imports, not for high-frequency streaming ingestion.
+- **Synthetische Daten:** Kein Ergebnis dieses Repositories beschreibt eine reale
+  PV-Anlage.
+- **Einstrahlung:** Es wird angenommen, dass sie in der Modulebene gemessen wird.
+- **Leistung:** Es wird AC-Leistung am Wechselrichterausgang angenommen.
+- **Energieintegration:** Rechteckig und konservativ bei fehlenden Samples.
+- **Performance Ratio:** Teilweise abgedeckte Tage/Monate unterhalb der Schwelle
+  werden ausgeschlossen.
+- **Mehrere Sensoren pro Metrik:** Werte werden pro Zeitstempel gemittelt; dies ist
+  eine Vereinfachung und wird als Warnung gemeldet.
+- **Sommerzeit:** Mehrdeutige lokale Zeitstempel bei der Herbstumstellung werden als
+  erstes Vorkommen interpretiert; nicht existierende Frühlingszeiten werden nach
+  vorn verschoben.
+- **Trends:** Statistische Trends sind deskriptiv und belegen keine
+  Moduldegradation.
+- **Betriebsmodell:** Die Pipeline ist bewusst single-process und dateiorientiert.
+  Sie eignet sich für periodische CSV-Importe einer Forschungsgruppe, nicht für
+  hochfrequentes Streaming.
+
+---
+
+<div align="center">
+
+**Entwickelt für reproduzierbare, nachvollziehbare PV-Datenanalyse.**
+
+*Synthetische Beispieldaten – keine realen Messungen.*
+
+</div>
