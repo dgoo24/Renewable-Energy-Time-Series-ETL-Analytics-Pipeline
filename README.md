@@ -27,12 +27,6 @@ statischen Dashboard.
 > Diagramm enthält diesen Hinweis. Die Daten dürfen nicht als reale
 > Forschungsmessungen präsentiert werden.
 
-> [!TIP]
-> **Online-Demo:** Das Dashboard ist als statische GitHub-Pages-Seite verfügbar:
-> **https://dgoo24.github.io/Renewable-Energy-Time-Series-ETL-Analytics-Pipeline/**
-> Sie wird bei jedem Push aus synthetischen Daten neu gebaut und ist kein
-> Echtzeit-Stream.
-
 ---
 
 ## 📋 Inhaltsverzeichnis
