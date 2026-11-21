@@ -21,12 +21,7 @@ statischen Dashboard.
 ---
 
 > [!WARNING]
-> **Alle Beispieldaten in diesem Repository sind synthetisch.**
 > Die Daten wurden simuliert, um die tatsächlichen Daten zu schützen, die an der Universität verwendet werden.
-> Sie wurden ausschließlich zu Demonstrations- und Testzwecken erzeugt und sind
-> **keine Messungen einer realen Photovoltaikanlage**. Jeder Bericht und jedes
-> Diagramm enthält diesen Hinweis. Die Daten dürfen nicht als reale
-> Forschungsmessungen präsentiert werden.
 
 ---
 
