@@ -21,7 +21,7 @@ statischen Dashboard.
 ---
 
 > [!WARNING]
-> Die Daten wurden simuliert, um die tatsächlichen Daten zu schützen, die an der Universität verwendet werden.
+> Die Daten wurden simuliert, um die tatsächlichen Daten zu schützen, die an der Universität verwendet werden. Daher handelt es sich bei dem erstellten Dashboard um eine Nachbildung des ursprünglichen Dashboards und nicht um das Original. Die dargestellten Daten und Ergebnisse dienen ausschließlich Demonstrations- und Testzwecken.
 
 ---
 
